@@ -1,12 +1,15 @@
 import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { FileText, Upload, X } from "lucide-react";
+import { FileText, Upload, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 export const PdfUploader = () => {
   const [file, setFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractedText, setExtractedText] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (selectedFile: File | null) => {
@@ -56,8 +59,41 @@ export const PdfUploader = () => {
     toast.info("File removed");
   };
 
-  const handleGenerateQuiz = () => {
-    toast.info("AI quiz generation will be implemented soon!");
+  const handleGenerateQuiz = async () => {
+    if (!file) return;
+
+    setIsExtracting(true);
+    setExtractedText(null);
+
+    try {
+      console.log('Extracting text from PDF...');
+      
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const { data, error } = await supabase.functions.invoke('extract-pdf-text', {
+        body: formData,
+      });
+
+      if (error) {
+        console.error('Error calling extract-pdf-text function:', error);
+        throw error;
+      }
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      console.log('Text extracted successfully:', data);
+      setExtractedText(data.text);
+      
+      toast.success(`Successfully extracted text from ${data.pages} pages!`);
+    } catch (error) {
+      console.error('Error extracting PDF text:', error);
+      toast.error('Failed to extract text from PDF. Please try again.');
+    } finally {
+      setIsExtracting(false);
+    }
   };
 
   return (
@@ -140,9 +176,36 @@ export const PdfUploader = () => {
             onClick={handleGenerateQuiz}
             size="lg"
             className="w-full"
+            disabled={isExtracting}
           >
-            Generate Quiz from PDF
+            {isExtracting ? (
+              <>
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                Extracting Text...
+              </>
+            ) : (
+              'Generate Quiz from PDF'
+            )}
           </Button>
+
+          {extractedText && (
+            <Card className="bg-card border-border mt-4">
+              <div className="p-6">
+                <h4 className="font-semibold text-foreground mb-3">
+                  Extracted Text Preview
+                </h4>
+                <div className="bg-muted rounded-lg p-4 max-h-64 overflow-y-auto">
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                    {extractedText.substring(0, 1000)}
+                    {extractedText.length > 1000 && '...'}
+                  </p>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Total characters: {extractedText.length.toLocaleString()}
+                </p>
+              </div>
+            </Card>
+          )}
         </div>
       )}
     </div>
